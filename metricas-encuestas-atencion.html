@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Métricas Encuestas - Atención al ciudadano</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#fdf6ee;min-height:100vh;padding:20px}
+.container{max-width:1200px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 10px 40px rgba(124,45,18,.10);overflow:hidden}
+.header{background:#fff;color:#431407;padding:30px;text-align:center;border-bottom:4px solid #f97316}
+.header h1{font-size:2.5em;margin-bottom:10px;color:#c2410c}
+.header p{font-size:1.1em;color:#7c2d12;opacity:.8}
+.upload-section{padding:40px;text-align:center}
+.upload-box{border:2px dashed #fdba74;border-radius:15px;padding:60px 40px;background:#fffaf5;cursor:pointer;transition:all .3s}
+.upload-box:hover{background:#ffedd5;border-color:#ea580c}
+.upload-box.dragover{background:#fed7aa;border-color:#c2410c}
+.upload-icon{font-size:4em;margin-bottom:20px}
+.upload-box h2{color:#f97316;margin-bottom:10px}
+.upload-box p{color:#666;font-size:1.1em}
+input[type=file]{display:none}
+.btn{background:linear-gradient(135deg,#f97316 0%,#ea580c 100%);color:#fff;border:none;padding:15px 40px;font-size:1.1em;border-radius:50px;cursor:pointer;margin-top:20px;transition:transform .2s}
+.btn:hover{transform:scale(1.05)}
+.reset-btn{background:#c2410c}
+.reset-btn:hover{background:#9a3412}
+.results-section{padding:40px;display:none}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}
+.stat-card{background:#fff;color:#431407;padding:22px;border-radius:12px;text-align:center;border:1px solid #fde6d0;border-top:4px solid #f97316}
+.stat-card h3{font-size:.85em;color:#7c2d12;margin-bottom:10px;text-transform:uppercase}
+.stat-card .number{font-size:2.3em;font-weight:bold;color:#ea580c}
+.stat-card small{display:block;opacity:.85;margin-top:6px}
+.warn{background:#fff8e1;border-left:5px solid #f5a623;color:#7a5200;padding:15px 20px;border-radius:10px;margin-bottom:25px;display:none}
+.q-card{background:#fff;border:1px solid #fde6d0;border-radius:15px;padding:25px;margin-bottom:30px}
+.q-card h2{color:#f97316;margin-bottom:5px;font-size:1.3em}
+.q-card .fav{color:#666;margin-bottom:20px}
+.q-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:25px;align-items:center}
+.chart-wrapper{position:relative;height:300px}
+table{width:100%;border-collapse:collapse}
+th{background:#ffedd5;color:#7c2d12;padding:12px;text-align:left;font-weight:600}
+td{padding:12px;border-bottom:1px solid #e0e0e0}
+tr:hover{background:#fff7ed}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.table-wrap{overflow-x:auto}
+html{-webkit-text-size-adjust:100%}
+img,canvas{max-width:100%}
+.header h1{font-size:clamp(1.5rem,5vw,2.5rem)}
+.header p{font-size:clamp(.95rem,2.6vw,1.1rem)}
+.stats-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))}
+.stat-card .number{font-size:clamp(1.7rem,5vw,2.3rem)}
+.q-card h2{font-size:clamp(1.05rem,3.2vw,1.3rem);line-height:1.3}
+.btn{min-height:44px}
+td,th{overflow-wrap:anywhere}
+@media(max-width:900px){
+.q-body{grid-template-columns:1fr}
+.chart-wrapper{height:280px}
+}
+@media(max-width:768px){
+body{padding:10px}
+.container{border-radius:14px}
+.header{padding:20px 15px}
+.upload-section{padding:20px 15px}
+.upload-box{padding:36px 18px}
+.upload-icon{font-size:3em}
+.upload-box h2{font-size:1.25em}
+.upload-box p{font-size:.95em}
+.results-section{padding:20px 15px}
+.stats-grid{gap:12px;margin-bottom:28px}
+.stat-card{padding:16px 10px}
+.stat-card h3{font-size:.75em}
+.q-card{padding:18px 14px;margin-bottom:20px}
+th,td{padding:10px 8px;font-size:.92em}
+}
+@media(max-width:480px){
+body{padding:6px}
+.stats-grid{grid-template-columns:repeat(2,1fr)}
+.chart-wrapper{height:250px}
+th,td{padding:8px 6px;font-size:.85em}
+.btn{width:100%;padding:12px 20px}
+}
+@media(hover:none){.btn:hover{transform:none}tr:hover{background:transparent}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>📊 Métricas</h1>
+    <p>Encuesta de satisfacción - Atención al ciudadano</p>
+  </div>
+
+  <div class="upload-section" id="uploadSection">
+    <div class="upload-box" id="uploadBox">
+      <div class="upload-icon">📁</div>
+      <h2>Selecciona tu archivo Excel</h2>
+      <p>Arrastra y suelta tu archivo .xlsx aquí o haz clic para seleccionar</p>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx, .xls">
+  </div>
+
+  <div class="results-section" id="resultsSection">
+    <div class="warn" id="warnBox"></div>
+    <div class="stats-grid" id="statsGrid"></div>
+    <div id="questions"></div>
+    <div style="text-align:center">
+      <button class="btn reset-btn" onclick="resetApp()">🔄 Cargar otro archivo</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Configuración de preguntas ----------
+// key: texto normalizado de la respuesta | fav: cuenta como respuesta favorable
+const VERDE='#16a34a', AZUL='#84cc16', AMBAR='#fbbf24', ROJO='#dc2626', VIOLETA='#ea580c';
+const PREGUNTAS = [
+  { id:'q1', titulo:'1. ¿Cómo califica la atención que recibió?', clave:'califica',
+    opciones:[
+      {key:'excelente', label:'Excelente', color:VERDE, fav:true},
+      {key:'buena', label:'Buena', color:AZUL, fav:true},
+      {key:'regular', label:'Regular', color:AMBAR},
+      {key:'mala', label:'Mala', color:ROJO}]},
+  { id:'q2', titulo:'2. ¿El trato del funcionario fue amable y respetuoso?', clave:'amable',
+    opciones:[
+      {key:'si', label:'Sí', color:VERDE, fav:true},
+      {key:'regular', label:'Regular', color:AMBAR},
+      {key:'no', label:'No', color:ROJO}]},
+  { id:'q3', titulo:'3. ¿La información que recibió fue clara?', clave:'clara',
+    opciones:[
+      {key:'si', label:'Sí', color:VERDE, fav:true},
+      {key:'parcialmente', label:'Parcialmente', color:AMBAR},
+      {key:'no', label:'No', color:ROJO}]},
+  { id:'q4', titulo:'4. ¿Su requerimiento fue atendido de manera adecuada?', clave:'atendido',
+    opciones:[
+      {key:'si', label:'Sí', color:VERDE, fav:true},
+      {key:'parcialmente', label:'Parcialmente', color:AMBAR},
+      {key:'no', label:'No', color:ROJO}]},
+  { id:'q5', titulo:'5. En general, ¿qué tan satisfecho(a) quedó con la atención?', clave:'satisfecho',
+    opciones:[
+      {key:'muy satisfecho', label:'Muy satisfecho(a)', color:VERDE, fav:true},
+      {key:'satisfecho', label:'Satisfecho(a)', color:AZUL, fav:true},
+      {key:'poco satisfecho', label:'Poco satisfecho(a)', color:AMBAR},
+      {key:'insatisfecho', label:'Insatisfecho(a)', color:ROJO}]}
+];
+// Si no se detectan los encabezados, se usan 5 columnas consecutivas desde esta (0 = A, 2 = C)
+const COLUMNA_INICIAL_RESPALDO = 2;
+
+let chartInstances = [];
+let ultimosResultados = null, ultimoMovil = null;
+const uploadBox = document.getElementById('uploadBox');
+const fileInput = document.getElementById('fileInput');
+const uploadSection = document.getElementById('uploadSection');
+const resultsSection = document.getElementById('resultsSection');
+const UPLOAD_HTML = uploadBox.innerHTML;
+
+uploadBox.addEventListener('click', () => fileInput.click());
+uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('dragover'); });
+uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragover'));
+uploadBox.addEventListener('drop', e => {
+  e.preventDefault(); uploadBox.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  if (!/\.(xlsx|xls)$/i.test(file.name)) { alert('Por favor selecciona un archivo Excel válido (.xlsx o .xls)'); return; }
+  uploadBox.innerHTML = '<div style="color:#f97316;font-size:1.2em">⏳ Procesando archivo...</div>';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1});
+      processData(data);
+    } catch (err) { alert('Error al procesar el archivo: ' + err.message); resetApp(); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Quita acentos, símbolos de casilla, "(a)" y pasa a minúsculas
+function norm(v) {
+  return String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\(a\)/gi, '').replace(/[^a-zA-Z\s]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function detectarColumnas(headers) {
+  const usadas = new Set(), cols = [];
+  let detectadas = 0;
+  PREGUNTAS.forEach(p => {
+    const idx = headers.findIndex((h, i) => !usadas.has(i) && norm(h).includes(p.clave));
+    if (idx >= 0) { usadas.add(idx); cols.push(idx); detectadas++; } else cols.push(-1);
+  });
+  if (detectadas < PREGUNTAS.length) {
+    // Respaldo: columnas consecutivas
+    return { cols: PREGUNTAS.map((_, i) => COLUMNA_INICIAL_RESPALDO + i), respaldo: true };
+  }
+  return { cols, respaldo: false };
+}
+
+function processData(data) {
+  if (data.length < 2) { alert('El archivo no contiene filas de datos'); resetApp(); return; }
+  const { cols, respaldo } = detectarColumnas(data[0] || []);
+  const filas = data.slice(1).filter(r => r && r.some(c => c !== undefined && c !== ''));
+  let sinReconocer = 0;
+
+  const resultados = PREGUNTAS.map((p, qi) => {
+    const conteo = p.opciones.map(() => 0);
+    let validas = 0;
+    filas.forEach(r => {
+      const val = norm(r[cols[qi]]);
+      if (!val) return;
+      const i = p.opciones.findIndex(o => o.key === val);
+      if (i >= 0) { conteo[i]++; validas++; } else sinReconocer++;
+    });
+    const fav = p.opciones.reduce((s, o, i) => s + (o.fav ? conteo[i] : 0), 0);
+    return { p, conteo, validas, fav };
+  });
+
+  if (resultados.every(r => r.validas === 0)) {
+    alert('No se reconocieron respuestas. Revisa que las columnas contengan las opciones de la encuesta.');
+    resetApp(); return;
+  }
+  displayResults(resultados, filas.length, { respaldo, sinReconocer, cols });
+}
+
+function pct(n, t) { return t ? (n / t * 100).toFixed(1) : '0.0'; }
+
+function displayResults(resultados, totalFilas, info) {
+  uploadSection.style.display = 'none';
+  resultsSection.style.display = 'block';
+
+  const warn = document.getElementById('warnBox');
+  const msgs = [];
+  if (info.respaldo) msgs.push('No se detectaron los encabezados de las preguntas; se leyeron 5 columnas consecutivas desde la columna ' + colLetra(info.cols[0]) + '.');
+  if (info.sinReconocer) msgs.push(info.sinReconocer + ' respuesta(s) no coinciden con las opciones de la encuesta y no se contaron.');
+  warn.style.display = msgs.length ? 'block' : 'none';
+  warn.innerHTML = msgs.join('<br>');
+
+  // Tarjetas resumen
+  const r1 = resultados[0], r5 = resultados[4];
+  const amable = resultados[1], clara = resultados[2], atendido = resultados[3];
+  const tarjeta = (t, n, s) => `<div class="stat-card"><h3>${t}</h3><div class="number">${n}</div>${s ? `<small>${s}</small>` : ''}</div>`;
+  document.getElementById('statsGrid').innerHTML =
+    tarjeta('Total encuestas', totalFilas) +
+    tarjeta('Atención excelente o buena', pct(r1.fav, r1.validas) + '%', r1.fav + ' de ' + r1.validas) +
+    tarjeta('Trato amable', pct(amable.fav, amable.validas) + '%', 'respondieron Sí') +
+    tarjeta('Información clara', pct(clara.fav, clara.validas) + '%', 'respondieron Sí') +
+    tarjeta('Requerimiento atendido', pct(atendido.fav, atendido.validas) + '%', 'respondieron Sí') +
+    tarjeta('Satisfacción general', pct(r5.fav, r5.validas) + '%', 'muy satisfechos o satisfechos');
+
+  // Una tarjeta por pregunta
+  const cont = document.getElementById('questions');
+  cont.innerHTML = resultados.map(({ p, conteo, validas, fav }) => `
+    <div class="q-card">
+      <h2>${p.titulo}</h2>
+      <div class="fav">${validas} respuestas · ${pct(fav, validas)}% favorable</div>
+      <div class="q-body">
+        <div class="chart-wrapper"><canvas id="chart-${p.id}"></canvas></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Respuesta</th><th>Cantidad</th><th>Porcentaje</th></tr></thead>
+            <tbody>${p.opciones.map((o, i) => `
+              <tr><td><span class="dot" style="background:${o.color}"></span>${o.label}</td>
+              <td>${conteo[i]}</td><td>${pct(conteo[i], validas)}%</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`).join('');
+
+  ultimosResultados = resultados;
+  createCharts(resultados);
+}
+
+function colLetra(i) { let s = '', n = i + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+
+function createCharts(resultados) {
+  chartInstances.forEach(c => c.destroy());
+  chartInstances = [];
+  const isMobile = window.innerWidth <= 900;
+  ultimoMovil = isMobile;
+  resultados.forEach(({ p, conteo, validas }) => {
+    const ctx = document.getElementById('chart-' + p.id).getContext('2d');
+    chartInstances.push(new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: p.opciones.map(o => o.label),
+        datasets: [{ data: conteo, backgroundColor: p.opciones.map(o => o.color), borderColor: 'white', borderWidth: 3 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: isMobile ? 'bottom' : 'right', labels: { padding: 14, font: { size: 12 } } },
+          tooltip: { callbacks: { label: c => c.label + ': ' + c.parsed + ' (' + pct(c.parsed, validas) + '%)' } }
+        }
+      }
+    }));
+  });
+}
+
+window.addEventListener('resize', () => {
+  if (ultimosResultados && (window.innerWidth <= 900) !== ultimoMovil) createCharts(ultimosResultados);
+});
+
+function resetApp() {
+  ultimosResultados = null;
+  uploadSection.style.display = 'block';
+  resultsSection.style.display = 'none';
+  uploadBox.innerHTML = UPLOAD_HTML;
+  fileInput.value = '';
+  chartInstances.forEach(c => c.destroy());
+  chartInstances = [];
+}
+</script>
+</body>
+</html>
