@@ -43,6 +43,10 @@ td{padding:12px;border-bottom:1px solid #e0e0e0}
 tr:hover{background:#fff7ed}
 .dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;vertical-align:middle}
 .table-wrap{overflow-x:auto}
+/* Detalle por encuestador */
+.prog{display:flex;align-items:center}
+.bar-bg{flex:1;min-width:80px;height:14px;background:#ffedd5;border-radius:10px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,#f97316,#ea580c);border-radius:10px}
 html{-webkit-text-size-adjust:100%}
 img,canvas{max-width:100%}
 .header h1{font-size:clamp(1.5rem,5vw,2.5rem)}
@@ -78,6 +82,7 @@ body{padding:6px}
 .chart-wrapper{height:250px}
 th,td{padding:8px 6px;font-size:.85em}
 .btn{width:100%;padding:12px 20px}
+.bar-bg{min-width:50px}
 }
 @media(hover:none){.btn:hover{transform:none}tr:hover{background:transparent}}
 </style>
@@ -101,6 +106,29 @@ th,td{padding:8px 6px;font-size:.85em}
   <div class="results-section" id="resultsSection">
     <div class="warn" id="warnBox"></div>
     <div class="stats-grid" id="statsGrid"></div>
+
+    <!-- Detalle por encuestador (igual que Métricas Brigadas) -->
+    <div id="encSection">
+      <div class="q-card">
+        <h2>📋 Detalle por Encuestador</h2>
+        <div class="fav" id="encResumen"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Encuestador</th><th>Cantidad</th><th>Porcentaje</th><th>Progreso</th></tr></thead>
+            <tbody id="encBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="q-card">
+        <h2>📊 Gráfico de Barras</h2>
+        <div class="chart-wrapper" id="barWrap"><canvas id="barChart"></canvas></div>
+      </div>
+      <div class="q-card">
+        <h2>🥧 Distribución Porcentual</h2>
+        <div class="chart-wrapper" id="pieWrap"><canvas id="pieChart"></canvas></div>
+      </div>
+    </div>
+
     <div id="questions"></div>
     <div style="text-align:center">
       <button class="btn reset-btn" onclick="resetApp()">🔄 Cargar otro archivo</button>
@@ -128,6 +156,7 @@ const PREGUNTAS = [
     opciones:[
       {key:'si', label:'Sí', color:VERDE, fav:true},
       {key:'parcialmente', label:'Parcialmente', color:AMBAR},
+      {key:'regular', label:'Regular', color:'#fb923c'},
       {key:'no', label:'No', color:ROJO}]},
   { id:'q4', titulo:'4. ¿Su requerimiento fue atendido de manera adecuada?', clave:'atendido',
     opciones:[
@@ -143,9 +172,11 @@ const PREGUNTAS = [
 ];
 // Si no se detectan los encabezados, se usan 5 columnas consecutivas desde esta (0 = A, 2 = C)
 const COLUMNA_INICIAL_RESPALDO = 2;
+// Columna del encuestador si no se detecta el encabezado (0 = A, 1 = B)
+const COLUMNA_ENCUESTADOR_RESPALDO = 1;
 
 let chartInstances = [];
-let ultimosResultados = null, ultimoMovil = null;
+let ultimosResultados = null, ultimoMovil = null, ultimosEnc = null;
 const uploadBox = document.getElementById('uploadBox');
 const fileInput = document.getElementById('fileInput');
 const uploadSection = document.getElementById('uploadSection');
@@ -181,6 +212,12 @@ function norm(v) {
     .replace(/\(a\)/gi, '').replace(/[^a-zA-Z\s]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function colorEnc(i) { return 'hsl(' + ((i * 47 + 20) % 360) + ',68%,52%)'; }
+
 function detectarColumnas(headers) {
   const usadas = new Set(), cols = [];
   let detectadas = 0;
@@ -195,11 +232,27 @@ function detectarColumnas(headers) {
   return { cols, respaldo: false };
 }
 
+// Cuenta encuestas por encuestador (ignora mayúsculas y espacios extra), de mayor a menor
+function contarEncuestadores(filas, col) {
+  const m = {};
+  filas.forEach(r => {
+    const v = r[col];
+    if (v == null || String(v).trim() === '') return;
+    const k = String(v).trim().replace(/\s+/g, ' ').toUpperCase();
+    m[k] = (m[k] || 0) + 1;
+  });
+  return Object.entries(m).sort((a, b) => b[1] - a[1]);
+}
+
 function processData(data) {
   if (data.length < 2) { alert('El archivo no contiene filas de datos'); resetApp(); return; }
   const { cols, respaldo } = detectarColumnas(data[0] || []);
   const filas = data.slice(1).filter(r => r && r.some(c => c !== undefined && c !== ''));
   let sinReconocer = 0;
+
+  let colEnc = (data[0] || []).findIndex(h => norm(h).includes('encuestador'));
+  if (colEnc < 0) colEnc = COLUMNA_ENCUESTADOR_RESPALDO;
+  const enc = contarEncuestadores(filas, colEnc);
 
   const resultados = PREGUNTAS.map((p, qi) => {
     const conteo = p.opciones.map(() => 0);
@@ -218,7 +271,7 @@ function processData(data) {
     alert('No se reconocieron respuestas. Revisa que las columnas contengan las opciones de la encuesta.');
     resetApp(); return;
   }
-  displayResults(resultados, filas.length, { respaldo, sinReconocer, cols });
+  displayResults(resultados, filas.length, { respaldo, sinReconocer, cols, enc });
 }
 
 function pct(n, t) { return t ? (n / t * 100).toFixed(1) : '0.0'; }
@@ -237,14 +290,26 @@ function displayResults(resultados, totalFilas, info) {
   // Tarjetas resumen
   const r1 = resultados[0], r5 = resultados[4];
   const amable = resultados[1], clara = resultados[2], atendido = resultados[3];
+  const enc = info.enc, encTotal = enc.reduce((s, e) => s + e[1], 0);
   const tarjeta = (t, n, s) => `<div class="stat-card"><h3>${t}</h3><div class="number">${n}</div>${s ? `<small>${s}</small>` : ''}</div>`;
   document.getElementById('statsGrid').innerHTML =
     tarjeta('Total encuestas', totalFilas) +
+    (enc.length ? tarjeta('Encuestadores', enc.length) +
+      tarjeta('Promedio por encuestador', (encTotal / enc.length).toFixed(1)) +
+      tarjeta('Máximo', enc[0][1], esc(enc[0][0])) : '') +
     tarjeta('Atención excelente o buena', pct(r1.fav, r1.validas) + '%', r1.fav + ' de ' + r1.validas) +
     tarjeta('Trato amable', pct(amable.fav, amable.validas) + '%', 'respondieron Sí') +
     tarjeta('Información clara', pct(clara.fav, clara.validas) + '%', 'respondieron Sí') +
     tarjeta('Requerimiento atendido', pct(atendido.fav, atendido.validas) + '%', 'respondieron Sí') +
     tarjeta('Satisfacción general', pct(r5.fav, r5.validas) + '%', 'muy satisfechos o satisfechos');
+
+  // Detalle por encuestador
+  document.getElementById('encSection').style.display = enc.length ? 'block' : 'none';
+  document.getElementById('encResumen').textContent = encTotal + ' encuestas · ' + enc.length + ' encuestadores';
+  document.getElementById('encBody').innerHTML = enc.map(([n, c], i) => `
+    <tr><td><span class="dot" style="background:${colorEnc(i)}"></span><strong>${esc(n)}</strong></td>
+    <td>${c}</td><td>${pct(c, encTotal)}%</td>
+    <td><div class="prog"><div class="bar-bg"><div class="bar-fill" style="width:${(c / enc[0][1] * 100).toFixed(1)}%"></div></div></div></td></tr>`).join('');
 
   // Una tarjeta por pregunta
   const cont = document.getElementById('questions');
@@ -267,16 +332,53 @@ function displayResults(resultados, totalFilas, info) {
     </div>`).join('');
 
   ultimosResultados = resultados;
+  ultimosEnc = enc;
   createCharts(resultados);
 }
 
 function colLetra(i) { let s = '', n = i + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+
+function createEncCharts(enc) {
+  if (!enc || !enc.length) return;
+  const mob = window.innerWidth <= 900;
+  const labels = enc.map(e => e[0]), values = enc.map(e => e[1]);
+  const colors = enc.map((_, i) => colorEnc(i));
+  const total = values.reduce((a, b) => a + b, 0);
+
+  // Barras horizontales: la altura crece con la cantidad de encuestadores
+  document.getElementById('barWrap').style.height = (enc.length * 30 + 70) + 'px';
+  chartInstances.push(new Chart(document.getElementById('barChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Encuestas', data: values, backgroundColor: colors, borderColor: colors, borderWidth: 1 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => 'Encuestas: ' + c.parsed.x + ' (' + pct(c.parsed.x, total) + '%)' } } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } },
+                y: { grid: { display: false }, ticks: { font: { size: mob ? 10 : 12 } } } }
+    }
+  }));
+
+  document.getElementById('pieWrap').style.height = (mob ? 460 : 340) + 'px';
+  chartInstances.push(new Chart(document.getElementById('pieChart').getContext('2d'), {
+    type: 'pie',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: 'white', borderWidth: 3 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: mob ? 'bottom' : 'right', labels: { padding: 10, boxWidth: 14, font: { size: 12 } } },
+        tooltip: { callbacks: { label: c => c.label + ': ' + c.parsed + ' (' + pct(c.parsed, total) + '%)' } }
+      }
+    }
+  }));
+}
 
 function createCharts(resultados) {
   chartInstances.forEach(c => c.destroy());
   chartInstances = [];
   const isMobile = window.innerWidth <= 900;
   ultimoMovil = isMobile;
+  createEncCharts(ultimosEnc);
   resultados.forEach(({ p, conteo, validas }) => {
     const ctx = document.getElementById('chart-' + p.id).getContext('2d');
     chartInstances.push(new Chart(ctx, {
@@ -302,6 +404,7 @@ window.addEventListener('resize', () => {
 
 function resetApp() {
   ultimosResultados = null;
+  ultimosEnc = null;
   uploadSection.style.display = 'block';
   resultsSection.style.display = 'none';
   uploadBox.innerHTML = UPLOAD_HTML;
